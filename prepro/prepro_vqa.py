@@ -16,7 +16,6 @@ import json
 import re
 import math
 
-
 def tokenize(sentence):
     return [i for i in re.split(r"([-.\"',:? !\$#@~()*&\^%;\[\]/\\\+<>\n=])", sentence) if i!='' and i!=' ' and i!='\n'];
 
@@ -36,6 +35,24 @@ def prepro_question(imgs, params):
         if i % 1000 == 0:
             sys.stdout.write("processing %d/%d (%.2f%% done)   \r" %  (i, len(imgs), i*100.0/len(imgs)) )
             sys.stdout.flush()   
+    return imgs
+
+def prepro_question_test(imgs, params):
+  
+    # preprocess all the question
+    print 'example processed tokens:'
+    for key,img in imgs.iteritems():
+        s = img['question'].encode('utf-8')
+        if params['token_method'] == 'nltk':
+            txt = word_tokenize(str(s).lower())
+        else:
+            txt = tokenize(s)
+
+        img['processed_tokens'] = txt
+        # if i < 10: print txt
+        # if i % 1000 == 0:
+        #     sys.stdout.write("processing %d/%d (%.2f%% done)   \r" %  (i, len(imgs), i*100.0/len(imgs)) )
+        #     sys.stdout.flush()   
     return imgs
 
 def build_vocab_question(imgs, params):
@@ -77,10 +94,10 @@ def build_vocab_question(imgs, params):
 
 def apply_vocab_question(imgs, wtoi):
     # apply the vocab on test.
-    for img in imgs:
+    for key, img in imgs.iteritems():
         txt = img['processed_tokens']
         question = [w if w in wtoi else 'UNK' for w in txt]
-        img['final_question'] = question
+        imgs[key]['final_question'] = question
 
     return imgs
 
@@ -119,6 +136,24 @@ def encode_question(imgs, params, wtoi):
     
     return label_arrays, label_length, question_id
 
+def encode_question_test(imgs, params, wtoi):
+
+    max_length = params['max_length']
+    N = len(imgs)
+
+    label_arrays = np.zeros((N, max_length), dtype='uint32')
+    label_length = np.zeros(N, dtype='uint32')
+    question_id = np.zeros(N, dtype='uint32')
+    question_counter = 0
+    for key,img in imgs.iteritems():
+        question_id[question_counter] = img['question_id']
+        label_length[question_counter] = min(max_length, len(img['final_question'])) # record the length of this sequence
+        for k,w in enumerate(img['final_question']):
+            if k < max_length:
+                label_arrays[question_counter,k] = wtoi[w]
+        question_counter += 1
+
+    return label_arrays, label_length, question_id
 
 def encode_answer(imgs, atoi):
     N = len(imgs)
@@ -126,6 +161,16 @@ def encode_answer(imgs, atoi):
 
     for i, img in enumerate(imgs):
         ans_arrays[i] = atoi.get(img['ans'], -1) # -1 means wrong answer.
+
+    return ans_arrays
+
+def encode_answer_test(imgs, atoi):
+    N = len(imgs)
+    ans_arrays = np.zeros(N, dtype='uint32')
+    i = 0
+    for key,img in imgs.iteritems():
+        ans_arrays[i] = atoi.get(img['answer'].encode('utf-8'), -1) # -1 means wrong answer.
+        i = i + 1
 
     return ans_arrays
 
@@ -177,6 +222,38 @@ def get_unqiue_img(imgs):
             ques_pos[idx][j] = ques_list[j]
     return unique_img, img_pos, ques_pos, ques_pos_len
 
+def get_unqiue_img_test(imgs):
+    count_img = {}
+    N = len(imgs)
+    img_pos = np.zeros(N, dtype='uint32')
+    ques_pos_tmp = {}
+    for key,img in imgs.iteritems(): 
+        count_img[img['img_file']] = count_img.get(img['img_file'], 0) + 1
+
+    unique_img = [w for w,n in count_img.iteritems()]
+    imgtoi = {w:i+1 for i,w in enumerate(unique_img)} # add one for torch, since torch start from 1.
+    i = 0
+    for key,img in imgs.iteritems(): 
+        idx = imgtoi.get(img['img_file'])
+        img_pos[i] = idx
+
+        if idx-1 not in ques_pos_tmp:
+            ques_pos_tmp[idx-1] = []
+
+        ques_pos_tmp[idx-1].append(i+1)
+        i = i + 1
+
+    img_N = len(ques_pos_tmp)
+    ques_pos = np.zeros((img_N,48), dtype='uint32')
+    ques_pos_len = np.zeros(img_N, dtype='uint32')
+
+    for idx, ques_list in ques_pos_tmp.iteritems():
+        ques_pos_len[idx] = len(ques_list)
+        print len(ques_list)
+        for j in range(len(ques_list)):
+            ques_pos[idx][j] = ques_list[j]
+    return unique_img, img_pos, ques_pos, ques_pos_len
+
 def main(params):
 
     imgs_train = json.load(open(params['input_train_json'], 'r'))
@@ -195,7 +272,7 @@ def main(params):
     # tokenization and preprocessing training question
     imgs_train = prepro_question(imgs_train, params)
     # tokenization and preprocessing testing question
-    imgs_test = prepro_question(imgs_test, params)
+    imgs_test = prepro_question_test(imgs_test, params)
 
     # create the vocab for question
     imgs_train, vocab = build_vocab_question(imgs_train, params)
@@ -205,17 +282,17 @@ def main(params):
     ques_train, ques_length_train, question_id_train = encode_question(imgs_train, params, wtoi)
 
     imgs_test = apply_vocab_question(imgs_test, wtoi)
-    ques_test, ques_length_test, question_id_test = encode_question(imgs_test, params, wtoi)
+    ques_test, ques_length_test, question_id_test = encode_question_test(imgs_test, params, wtoi)
 
     # get the unique image for train and test
     unique_img_train, img_pos_train, ques_pos_train, ques_pos_len_train = get_unqiue_img(imgs_train)
-    unique_img_test, img_pos_test, ques_pos_test, ques_pos_len_test = get_unqiue_img(imgs_test)
+    unique_img_test, img_pos_test, ques_pos_test, ques_pos_len_test = get_unqiue_img_test(imgs_test)
 
     # get the answer encoding.
     ans_train = encode_answer(imgs_train, atoi)
     
-    ans_test = encode_answer(imgs_test, atoi)
-    MC_ans_test = encode_mc_answer(imgs_test, atoi)
+    ans_test = encode_answer_test(imgs_test, atoi)
+    #MC_ans_test = encode_mc_answer(imgs_test, atoi)
 
     # get the split
     N_train = len(imgs_train)
@@ -254,7 +331,7 @@ def main(params):
 
     f.create_dataset("ques_len_train", dtype='uint32', data=ques_length_train)
     f.create_dataset("ques_len_test", dtype='uint32', data=ques_length_test)
-    f.create_dataset("MC_ans_test", dtype='uint32', data=MC_ans_test)
+    #f.create_dataset("MC_ans_test", dtype='uint32', data=MC_ans_test)
 
     f.close()
     print 'wrote ', params['output_h5']
@@ -274,11 +351,11 @@ if __name__ == "__main__":
 
     # input json
     parser.add_argument('--input_train_json', default='../data/vqa_raw_train.json', help='input json file to process into hdf5')
-    parser.add_argument('--input_test_json', default='../data/vqa_raw_test.json', help='input json file to process into hdf5')
+    parser.add_argument('--input_test_json', default='../data/fvqa_raw_test.json', help='input json file to process into hdf5')
     parser.add_argument('--num_ans', default=1000, type=int, help='number of top answers for the final classifications.')
 
-    parser.add_argument('--output_json', default='../data/vqa_data_prepro.json', help='output json file')
-    parser.add_argument('--output_h5', default='../data/vqa_data_prepro.h5', help='output h5 file')
+    parser.add_argument('--output_json', default='../data/fvqa_data_prepro.json', help='output json file')
+    parser.add_argument('--output_h5', default='../data/fvqa_data_prepro.h5', help='output h5 file')
   
     # options
     parser.add_argument('--max_length', default=26, type=int, help='max length of a caption, in number of words. captions longer than this get clipped.')

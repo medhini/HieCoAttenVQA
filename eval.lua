@@ -24,7 +24,7 @@ cmd:option('-input_img_test_h5','data/vqa_data_img_vgg_test.h5','path to the h5f
 cmd:option('-input_ques_h5','data/vqa_data_prepro.h5','path to the h5file containing the preprocessed dataset')
 cmd:option('-input_json','data/vqa_data_prepro.json','path to the json file containing additional info and vocab')
 
-cmd:option('-start_from', 'model/vqa_model/model_alternating_train_vgg.t7', 'path to a model checkpoint to initialize model weights from. Empty = don\'t')
+cmd:option('-start_from', 'image_model/vqa_model/model_alternating_train_vgg.t7', 'path to a model checkpoint to initialize model weights from. Empty = don\'t')
 cmd:option('-co_atten_type', 'Alternating', 'co_attention type. Parallel or Alternating, alternating trains more faster than parallel.')
 cmd:option('-feature_type', 'VGG', 'VGG or Residual')
 
